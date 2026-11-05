@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Phase 10: Hard meta refresh removed in favor of AJAX polling -->
+    <title>L-IDS | Security Operations Center (SOC)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        socDark: '#111827',
+                        socPanel: '#1f2937',
+                        socBorder: '#374151',
+                    },
+                    boxShadow: {
+                        neonRed: '0 0 15px rgba(239, 68, 68, 0.45)',
+                        neonYellow: '0 0 15px rgba(234, 179, 8, 0.45)',
+                        neonGreen: '0 0 10px rgba(16, 185, 129, 0.6)',
+                        neonCyan: '0 0 15px rgba(6, 182, 212, 0.35)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes radar-sweep {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .animate-radar {
+            animation: radar-sweep 4s linear infinite;
+        }
+        /* Custom scrollbar for cyber aesthetic */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #111827;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+    </style>
+</head>
+<body class="bg-[#111827] text-gray-100 min-h-screen font-sans antialiased selection:bg-cyan-500 selection:text-black">
+
+    <!-- Top Navigation / SOC Header -->
+    <header class="border-b border-socBorder/80 bg-gray-900/90 backdrop-blur sticky top-0 z-50 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <!-- Brand / Logo -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-neonCyan">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 uppercase">
+                        L-IDS SOC Console
+                    </h1>
+                    <p class="text-xs text-gray-400 font-mono tracking-tight">Lightweight Intrusion Detection & Analysis</p>
+                </div>
+            </div>
+
+            <!-- Blinking Live Traffic Indicator -->
+            <div class="flex items-center gap-3 bg-gray-800/90 border border-emerald-500/30 px-4 py-2 rounded-full shadow-neonGreen">
+                <span class="relative flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+                <span class="text-xs font-bold tracking-wider text-emerald-400 font-mono animate-pulse uppercase">
+                    Status: Monitoring Live Traffic...
+                </span>
+                <span id="live-indicator" class="text-[10px] text-cyan-400 border-l border-gray-700 pl-2 font-mono">
+                    AJAX Live
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-6 py-8">
+
+        <!-- Metrics KPI Cards -->
+        {% set total_count = alerts|length %}
+        {% set leak_count = namespace(value=0) %}
+        {% set scan_count = namespace(value=0) %}
+        {% for a in alerts %}
+            {% set atype = a.get('Alert Type', a.get('alert_type', '')) %}
+            {% if 'Leak' in atype %}
+                {% set leak_count.value = leak_count.value + 1 %}
+            {% elif 'Scan' in atype %}
+                {% set scan_count.value = scan_count.value + 1 %}
+            {% endif %}
+        {% endfor %}
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
+            <!-- Total Threats Card -->
+            <div class="bg-gray-800/60 border border-gray-700/70 rounded-xl p-5 shadow-lg backdrop-blur">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono">Total Threats</span>
+                    <span class="p-2 rounded-lg bg-gray-700/50 text-cyan-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    </span>
+                </div>
+                <div id="kpi-total" class="mt-3 text-3xl font-extrabold text-cyan-400 font-mono">{{ total_count }}</div>
+                <div class="mt-1 text-xs text-gray-400">Recorded intrusions</div>
+            </div>
+
+            <!-- Cleartext Leaks Card (Neon Red Accent) -->
+            <div class="bg-red-950/20 border border-red-500/40 rounded-xl p-5 shadow-neonRed backdrop-blur">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-red-400 font-mono">Cleartext Leaks</span>
+                    <span class="p-2 rounded-lg bg-red-900/40 text-red-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    </span>
+                </div>
+                <div id="kpi-leaks" class="mt-3 text-3xl font-extrabold text-red-400 font-mono">{{ leak_count.value }}</div>
+                <div class="mt-1 text-xs text-red-300/80">Critical Signature Alerts</div>
+            </div>
+
+            <!-- Port Scans Card (Neon Yellow Accent) -->
+            <div class="bg-yellow-950/20 border border-yellow-500/40 rounded-xl p-5 shadow-neonYellow backdrop-blur">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-yellow-400 font-mono">Port Scans</span>
+                    <span class="p-2 rounded-lg bg-yellow-900/40 text-yellow-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    </span>
+                </div>
+                <div id="kpi-scans" class="mt-3 text-3xl font-extrabold text-yellow-400 font-mono">{{ scan_count.value }}</div>
+                <div class="mt-1 text-xs text-yellow-300/80">Anomaly Rate Alerts</div>
+            </div>
+
+            <!-- Sensor State Card -->
+            <div class="bg-gray-800/60 border border-gray-700/70 rounded-xl p-5 shadow-lg backdrop-blur">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono">Telemetry Link</span>
+                    <span class="p-2 rounded-lg bg-gray-700/50 text-emerald-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
+                    </span>
+                </div>
+                <div class="mt-3 text-2xl font-bold text-emerald-400 font-mono uppercase">ONLINE</div>
+                <div class="mt-1 text-xs text-gray-400">AJAX Polling (3s)</div>
+            </div>
+        </div>
+
+        <!-- Threats Table Panel (SOC Container) -->
+        <div class="bg-gray-900 border border-socBorder rounded-xl overflow-hidden shadow-2xl">
+            <!-- Table Header Bar -->
+            <div class="border-b border-socBorder bg-gray-800/60 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
+                    <h2 class="text-base font-bold uppercase tracking-wider text-gray-200 font-mono">
+                        Real-Time Intrusion Event Stream
+                    </h2>
+                </div>
+                <div class="text-xs font-mono text-gray-400 flex items-center gap-2">
+                    <span>Order: <strong class="text-cyan-400">Newest Threat First</strong></span>
+                    <span>•</span>
+                    <span>Update: <strong class="text-emerald-400">AJAX (No Reload)</strong></span>
+                </div>
+            </div>
+
+            <!-- Clean HTML Table with Dynamic TBODY -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-gray-700/80 bg-gray-950/60 text-xs font-mono uppercase text-gray-400 tracking-wider">
+                            <th class="py-3.5 px-6 font-semibold">Timestamp</th>
+                            <th class="py-3.5 px-6 font-semibold">Source IP</th>
+                            <th class="py-3.5 px-6 font-semibold">Destination IP</th>
+                            <th class="py-3.5 px-6 font-semibold">Alert Type</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alerts-table-body" class="divide-y divide-gray-800 font-mono text-sm">
+                        {% for alert in alerts %}
+                        {% set alert_type = alert.get('Alert Type', alert.get('alert_type', '')) %}
+                        <tr class="transition-colors hover:bg-gray-800/50 
+                            {% if 'Leak' in alert_type %}
+                                border-l-4 border-l-red-500 bg-red-950/10
+                            {% elif 'Scan' in alert_type %}
+                                border-l-4 border-l-yellow-500 bg-yellow-950/10
+                            {% else %}
+                                border-l-4 border-l-gray-600
+                            {% endif %}">
+                            
+                            <!-- Timestamp -->
+                            <td class="py-4 px-6 text-gray-300 whitespace-nowrap">
+                                {{ alert.get('Timestamp', alert.get('timestamp', '')) }}
+                            </td>
+
+                            <!-- Source IP -->
+                            <td class="py-4 px-6 whitespace-nowrap">
+                                <span class="bg-gray-800 text-cyan-300 border border-gray-700 px-2.5 py-1 rounded text-xs tracking-wide font-mono">
+                                    {{ alert.get('Source IP', alert.get('source_ip', '')) }}
+                                </span>
+                            </td>
+
+                            <!-- Destination IP -->
+                            <td class="py-4 px-6 whitespace-nowrap">
+                                <span class="bg-gray-800 text-gray-300 border border-gray-700 px-2.5 py-1 rounded text-xs tracking-wide font-mono">
+                                    {{ alert.get('Destination IP', alert.get('destination_ip', '')) }}
+                                </span>
+                            </td>
+
+                            <!-- Alert Type Badge with Neon Accents -->
+                            <td class="py-4 px-6 whitespace-nowrap">
+                                {% if 'Leak' in alert_type %}
+                                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-red-900/40 text-red-400 border border-red-500/50 shadow-neonRed">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
+                                        🚨 {{ alert_type }}
+                                    </span>
+                                {% elif 'Scan' in alert_type %}
+                                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-yellow-900/40 text-yellow-300 border border-yellow-500/50 shadow-neonYellow">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
+                                        ⚠️ {{ alert_type }}
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-300 border border-gray-700">
+                                        {{ alert_type }}
+                                    </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <!-- Empty State -->
+                        <tr>
+                            <td colspan="4" class="py-16 text-center text-gray-500">
+                                <div class="flex flex-col items-center justify-center gap-3">
+                                    <div class="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center text-gray-600 border border-gray-700">
+                                        <svg class="w-7 h-7 text-emerald-500/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    <p class="text-base font-semibold text-gray-400">No Security Threats Detected</p>
+                                    <p class="text-xs text-gray-600 font-mono">The network perimeter is quiet. Listening for anomalous traffic...</p>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Table Footer -->
+            <div class="border-t border-socBorder/80 bg-gray-950/70 px-6 py-3 flex items-center justify-between text-xs text-gray-500 font-mono">
+                <span>Data Source: <code class="text-gray-400">ids_alerts.csv</code></span>
+                <span id="last-updated" class="text-gray-400">Last Sync: Initial Load</span>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Phase 10: Asynchronous AJAX Polling Script -->
+    <script>
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        async function fetchAlerts() {
+            try {
+                const response = await fetch('/api/alerts');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const alerts = await response.json();
+                renderAlertsTable(alerts);
+
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString();
+                const syncEl = document.getElementById('last-updated');
+                if (syncEl) {
+                    syncEl.textContent = `Last Sync: ${timeStr} (AJAX)`;
+                }
+            } catch (err) {
+                console.error('L-IDS AJAX Polling Error:', err);
+            }
+        }
+
+        function renderAlertsTable(alerts) {
+            const tbody = document.getElementById('alerts-table-body');
+            if (!tbody) return;
+
+            let leakCount = 0;
+            let scanCount = 0;
+
+            alerts.forEach(alert => {
+                const type = alert['Alert Type'] || alert['alert_type'] || '';
+                if (type.includes('Leak')) {
+                    leakCount++;
+                } else if (type.includes('Scan')) {
+                    scanCount++;
+                }
+            });
+
+            const totalEl = document.getElementById('kpi-total');
+            const leaksEl = document.getElementById('kpi-leaks');
+            const scansEl = document.getElementById('kpi-scans');
+            if (totalEl) totalEl.textContent = alerts.length;
+            if (leaksEl) leaksEl.textContent = leakCount;
+            if (scansEl) scansEl.textContent = scanCount;
+
+            if (!alerts || alerts.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="py-16 text-center text-gray-500">
+                            <div class="flex flex-col items-center justify-center gap-3">
+                                <div class="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center text-gray-600 border border-gray-700">
+                                    <svg class="w-7 h-7 text-emerald-500/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <p class="text-base font-semibold text-gray-400">No Security Threats Detected</p>
+                                <p class="text-xs text-gray-600 font-mono">The network perimeter is quiet. Listening for anomalous traffic...</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            let rowsHtml = '';
+            alerts.forEach(alert => {
+                const timestamp = escapeHtml(alert['Timestamp'] || alert['timestamp'] || '');
+                const srcIp = escapeHtml(alert['Source IP'] || alert['source_ip'] || '');
+                const dstIp = escapeHtml(alert['Destination IP'] || alert['destination_ip'] || '');
+                const alertType = alert['Alert Type'] || alert['alert_type'] || '';
+
+                let borderClass = 'border-l-4 border-l-gray-600';
+                let badgeHtml = `<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-300 border border-gray-700">${escapeHtml(alertType)}</span>`;
+
+                if (alertType.includes('Leak')) {
+                    borderClass = 'border-l-4 border-l-red-500 bg-red-950/10';
+                    badgeHtml = `
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-red-900/40 text-red-400 border border-red-500/50 shadow-neonRed">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
+                            🚨 ${escapeHtml(alertType)}
+                        </span>
+                    `;
+                } else if (alertType.includes('Scan')) {
+                    borderClass = 'border-l-4 border-l-yellow-500 bg-yellow-950/10';
+                    badgeHtml = `
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-yellow-900/40 text-yellow-300 border border-yellow-500/50 shadow-neonYellow">
+                            <span class="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
+                            ⚠️ ${escapeHtml(alertType)}
+                        </span>
+                    `;
+                }
+
+                rowsHtml += `
+                    <tr class="transition-colors hover:bg-gray-800/50 ${borderClass}">
+                        <td class="py-4 px-6 text-gray-300 whitespace-nowrap">${timestamp}</td>
+                        <td class="py-4 px-6 whitespace-nowrap">
+                            <span class="bg-gray-800 text-cyan-300 border border-gray-700 px-2.5 py-1 rounded text-xs tracking-wide font-mono">${srcIp}</span>
+                        </td>
+                        <td class="py-4 px-6 whitespace-nowrap">
+                            <span class="bg-gray-800 text-gray-300 border border-gray-700 px-2.5 py-1 rounded text-xs tracking-wide font-mono">${dstIp}</span>
+                        </td>
+                        <td class="py-4 px-6 whitespace-nowrap">${badgeHtml}</td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = rowsHtml;
+        }
+
+        // Poll every 3 seconds via setInterval
+        setInterval(fetchAlerts, 3000);
+    </script>
+
+</body>
+</html>
